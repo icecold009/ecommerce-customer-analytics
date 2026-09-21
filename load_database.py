@@ -42,6 +42,31 @@ PRIMARY_KEYS: Mapping[str, tuple[str, ...]] = {
     "category_translation": ("product_category_name",),
 }
 
+REQUIRED_TIMESTAMP_COLUMNS: Mapping[str, tuple[str, ...]] = {
+    "orders": ("order_purchase_timestamp",),
+}
+
+
+def _validate_required_values(table_name: str, frame: pd.DataFrame) -> None:
+    """Reject missing identifiers and invalid timestamps before any DB writes."""
+    missing_identifiers = [
+        column for column in PRIMARY_KEYS[table_name] if frame[column].isna().any()
+    ]
+    if missing_identifiers:
+        columns = ", ".join(missing_identifiers)
+        raise ValueError(
+            f"Found null value(s) in required identifier column(s) for {table_name}: {columns}"
+        )
+
+    for column in REQUIRED_TIMESTAMP_COLUMNS.get(table_name, ()):
+        values = frame[column]
+        parsed = pd.to_datetime(values, errors="coerce", format="mixed")
+        invalid = values.isna() | parsed.isna()
+        if invalid.any():
+            raise ValueError(
+                f"Found null or invalid timestamp value(s) in {table_name}.{column}"
+            )
+
 
 def _read_required_tables(data_dir: Path) -> dict[str, pd.DataFrame]:
     missing = [filename for filename in REQUIRED_FILES.values() if not (data_dir / filename).is_file()]
@@ -58,6 +83,7 @@ def _read_required_tables(data_dir: Path) -> dict[str, pd.DataFrame]:
             raise ValueError(
                 f"{filename} is missing required column(s): {', '.join(sorted(missing_columns))}"
             )
+        _validate_required_values(table_name, frame)
         key_columns = PRIMARY_KEYS[table_name]
         duplicate_count = int(frame.duplicated(list(key_columns)).sum())
         if duplicate_count:

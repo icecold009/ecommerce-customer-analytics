@@ -40,3 +40,31 @@ def test_duplicate_order_ids_fail_before_writing(sample_data_dir: Path, tmp_path
 
     with pytest.raises(ValueError, match="duplicate key values.*orders"):
         load_database(sample_data_dir, tmp_path / "olist.db")
+
+
+def test_null_order_identifier_fails_before_writing(sample_data_dir: Path, tmp_path: Path) -> None:
+    orders_path = sample_data_dir / "olist_orders_dataset.csv"
+    orders = pd.read_csv(orders_path)
+    orders.loc[0, "order_id"] = pd.NA
+    orders.to_csv(orders_path, index=False)
+    db_path = tmp_path / "olist.db"
+
+    with pytest.raises(ValueError, match="required identifier.*orders: order_id"):
+        load_database(sample_data_dir, db_path)
+
+    assert not db_path.exists()
+
+
+def test_invalid_order_purchase_timestamp_fails_before_writing(
+    sample_data_dir: Path, tmp_path: Path
+) -> None:
+    orders_path = sample_data_dir / "olist_orders_dataset.csv"
+    orders = pd.read_csv(orders_path)
+    orders.loc[0, "order_purchase_timestamp"] = "not-a-timestamp"
+    orders.to_csv(orders_path, index=False)
+    db_path = tmp_path / "olist.db"
+
+    with pytest.raises(ValueError, match="invalid timestamp.*orders.order_purchase_timestamp"):
+        load_database(sample_data_dir, db_path)
+
+    assert not db_path.exists()

@@ -48,6 +48,8 @@ The loader preserves each CSV as a raw SQLite table. It also creates:
 - `order_payment_totals`: one row per order with payment values summed once, preventing payment-row duplication in order-level revenue.
 - `cleaned_order_items`: delivered order items joined through `products` and then `category_translation`; category translations are never joined directly to product IDs.
 
+Before writing the database, the loader rejects null primary-key identifiers and null or unparseable order purchase timestamps. Missing delivery timestamps remain valid in raw non-delivered orders; those rows are excluded from `cleaned_orders`, which requires the timestamps needed for delivery analysis.
+
 The cleaned views are used for delivery and cohort analysis. Payment-based revenue and RFM use the intersection of `cleaned_orders` and `order_payment_totals`. The canonical extract contains one delivered order (`bfbd0f9bdef84302105ad712db648a6c`) without a payment row; the validation query surfaces it and payment-based analyses intentionally exclude it. Category analysis retains untranslated categories through a fallback to the Portuguese name. Raw tables remain available for validation and future analyses. Orders removed from `cleaned_orders` are not delivered or lack one of the timestamps required for delivery analysis.
 
 ## RFM definitions
