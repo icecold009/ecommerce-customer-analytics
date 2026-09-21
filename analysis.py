@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 from pathlib import Path
 
@@ -76,6 +77,29 @@ def run_business_queries(db_path: str | Path) -> dict[str, pd.DataFrame]:
             INNER JOIN customers AS c ON c.customer_id = co.customer_id
             GROUP BY c.customer_state
             ORDER BY average_delivery_days DESC
+            """,
+        ),
+        "review_quality_by_state": _query(
+            db_path,
+            """
+            WITH order_review_scores AS (
+                SELECT
+                    order_id,
+                    AVG(review_score) AS average_review_score,
+                    MAX(CASE WHEN review_score IN (1, 2) THEN 1.0 ELSE 0.0 END) AS low_score_order
+                FROM order_reviews
+                GROUP BY order_id
+            )
+            SELECT
+                c.customer_state,
+                COUNT(*) AS reviewed_orders,
+                ROUND(AVG(ors.average_review_score), 2) AS average_review_score,
+                ROUND(AVG(ors.low_score_order), 4) AS low_score_rate
+            FROM order_review_scores AS ors
+            INNER JOIN cleaned_orders AS co ON co.order_id = ors.order_id
+            INNER JOIN customers AS c ON c.customer_id = co.customer_id
+            GROUP BY c.customer_state
+            ORDER BY low_score_rate DESC, reviewed_orders DESC, c.customer_state
             """,
         ),
         "revenue_by_category": _query(
@@ -267,8 +291,41 @@ def _save_bar(data: pd.DataFrame, x: str, y: str, title: str, filename: str, out
     return path
 
 
+def _write_analysis_bundle(
+    business: dict[str, pd.DataFrame],
+    rfm: pd.DataFrame,
+    retention: pd.DataFrame,
+    reconciliation: dict[str, float | int],
+    output_dir: Path,
+) -> Path:
+    """Write stable machine-readable summaries without exporting customer-level RFM rows."""
+    rfm_segments = (
+        rfm.groupby("segment", as_index=False)
+        .agg(customers=("customer_unique_id", "nunique"), revenue=("monetary", "sum"))
+        .assign(revenue=lambda frame: frame["revenue"].round(2))
+        .sort_values("segment")
+    )
+    retention_records = retention.assign(cohort_month=retention["cohort_month"].astype(str))
+    payload = {
+        "schema_version": 1,
+        "business_queries": {
+            name: json.loads(frame.to_json(orient="records"))
+            for name, frame in business.items()
+        },
+        "rfm_segments": json.loads(rfm_segments.to_json(orient="records")),
+        "cohort_retention": json.loads(retention_records.to_json(orient="records")),
+        "revenue_reconciliation": reconciliation,
+    }
+    path = output_dir / "analysis_summary.json"
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
-    """Generate the six planned charts and return their paths."""
+    """Generate the planned charts and machine-readable analysis bundle."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     sns.set_theme(style="whitegrid")
@@ -276,6 +333,7 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
     rfm = calculate_rfm(db_path)
     validate_rfm(rfm)
     retention = calculate_cohort_retention(db_path)
+    reconciliation = calculate_revenue_reconciliation(db_path)
 
     written = [
         _save_bar(business["monthly_revenue"], "month", "revenue", "Monthly revenue", "monthly_revenue.png", output_dir),
@@ -308,6 +366,7 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
     fig.savefig(heatmap_path, dpi=160)
     plt.close(fig)
     written.append(heatmap_path)
+    written.append(_write_analysis_bundle(business, rfm, retention, reconciliation, output_dir))
     return written
 
 
@@ -323,7 +382,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("outputs"))
     args = parser.parse_args()
     paths = run_pipeline(args.data_dir, args.db_path, args.output_dir)
-    print(f"Generated {len(paths)} charts in {args.output_dir}")
+    print(f"Generated {len(paths)} artifacts in {args.output_dir}")
     for path in paths:
         print(f"  {path.name}")
 
