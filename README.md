@@ -7,6 +7,7 @@ A reproducible, local-first analytics pipeline for the public Olist Brazilian e-
 - How does delivered-order revenue change by month?
 - Which payment methods and product categories contribute revenue?
 - Which customer states have the longest average delivery times?
+- How does review quality vary across customer states?
 - How are customers distributed across RFM segments?
 - How many customers return in each month after their first delivered order?
 
@@ -91,6 +92,8 @@ python -m pytest --basetemp .pytest-tmp
 ```
 
 The runtime prints loaded row counts and generates six deterministic PNGs: monthly revenue, payment-method revenue, delivery time by state, RFM segment counts, RFM revenue contribution, and cohort retention.
+
+Business-query results also include `review_quality_by_state`, which reports reviewed orders, average review score, and the fraction of reviewed orders with a score of 1 or 2. Reviews are averaged per order before the customer-state join so multiple review rows cannot multiply order results.
 
 ## Findings and recommendations
 

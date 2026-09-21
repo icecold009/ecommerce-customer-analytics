@@ -78,6 +78,29 @@ def run_business_queries(db_path: str | Path) -> dict[str, pd.DataFrame]:
             ORDER BY average_delivery_days DESC
             """,
         ),
+        "review_quality_by_state": _query(
+            db_path,
+            """
+            WITH order_review_scores AS (
+                SELECT
+                    order_id,
+                    AVG(review_score) AS average_review_score,
+                    MAX(CASE WHEN review_score IN (1, 2) THEN 1.0 ELSE 0.0 END) AS low_score_order
+                FROM order_reviews
+                GROUP BY order_id
+            )
+            SELECT
+                c.customer_state,
+                COUNT(*) AS reviewed_orders,
+                ROUND(AVG(ors.average_review_score), 2) AS average_review_score,
+                ROUND(AVG(ors.low_score_order), 4) AS low_score_rate
+            FROM order_review_scores AS ors
+            INNER JOIN cleaned_orders AS co ON co.order_id = ors.order_id
+            INNER JOIN customers AS c ON c.customer_id = co.customer_id
+            GROUP BY c.customer_state
+            ORDER BY low_score_rate DESC, reviewed_orders DESC, c.customer_state
+            """,
+        ),
         "revenue_by_category": _query(
             db_path,
             """

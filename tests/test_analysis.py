@@ -33,6 +33,18 @@ def test_business_queries_use_translated_categories_and_order_level_payments(sam
     }
 
 
+def test_review_quality_by_state_aggregates_reviews_once_per_order(sample_db: Path) -> None:
+    with sqlite3.connect(sample_db) as connection:
+        connection.execute("UPDATE order_reviews SET review_score = 2 WHERE order_id = 'o2'")
+
+    review_quality = run_business_queries(sample_db)["review_quality_by_state"]
+
+    assert list(review_quality["customer_state"]) == ["SP"]
+    assert review_quality.iloc[0]["reviewed_orders"] == 2
+    assert review_quality.iloc[0]["average_review_score"] == 3.5
+    assert review_quality.iloc[0]["low_score_rate"] == 0.5
+
+
 def test_rfm_has_one_segment_per_customer_and_reconciles(sample_db: Path) -> None:
     rfm = calculate_rfm(sample_db)
     validate_rfm(rfm)
