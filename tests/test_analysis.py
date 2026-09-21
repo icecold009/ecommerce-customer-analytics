@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -155,8 +156,29 @@ def test_validate_rfm_rejects_each_contract_violation() -> None:
 
 def test_generate_outputs_writes_expected_charts(sample_db: Path, tmp_path: Path) -> None:
     written = generate_outputs(sample_db, tmp_path / "outputs")
-    assert len(written) == 6
+    assert len(written) == 7
     assert all(path.exists() and path.stat().st_size > 0 for path in written)
+
+    bundle_path = tmp_path / "outputs" / "analysis_summary.json"
+    bundle_text = bundle_path.read_text(encoding="utf-8")
+    bundle = json.loads(bundle_text)
+    assert bundle["schema_version"] == 1
+    assert {
+        "monthly_revenue",
+        "payment_method",
+        "delivery_performance",
+        "delivery_by_state",
+        "review_quality_by_state",
+        "revenue_by_category",
+    } == set(bundle["business_queries"])
+    assert all(set(row) == {"customers", "revenue", "segment"} for row in bundle["rfm_segments"])
+    assert sum(row["customers"] for row in bundle["rfm_segments"]) == 2
+    assert sum(row["revenue"] for row in bundle["rfm_segments"]) == 51.0
+    assert bundle["cohort_retention"][0]["cohort_month"] == "2021-01"
+    assert bundle["revenue_reconciliation"]["payment_revenue"] == 51.0
+
+    generate_outputs(sample_db, tmp_path / "outputs")
+    assert bundle_path.read_text(encoding="utf-8") == bundle_text
 
 
 def test_run_pipeline_loads_database_and_writes_all_outputs(
@@ -164,7 +186,7 @@ def test_run_pipeline_loads_database_and_writes_all_outputs(
 ) -> None:
     written = run_pipeline(sample_data_dir, tmp_path / "pipeline.db", tmp_path / "outputs")
 
-    assert len(written) == 6
+    assert len(written) == 7
     assert all(path.exists() and path.stat().st_size > 0 for path in written)
 
 
@@ -187,4 +209,4 @@ def test_analysis_main_runs_pipeline(monkeypatch: pytest.MonkeyPatch, sample_dat
 
     main()
 
-    assert "Generated 6 charts" in capsys.readouterr().out
+    assert "Generated 7 artifacts" in capsys.readouterr().out
