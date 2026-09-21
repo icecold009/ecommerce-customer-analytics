@@ -1,17 +1,30 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from load_database import REQUIRED_FILES, load_database
+from load_database import REQUIRED_FILES, load_database, main
 
 
 def test_missing_required_csv_fails_fast(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="olist_orders_dataset.csv"):
         load_database(tmp_path / "data", tmp_path / "olist.db")
+
+
+def test_missing_required_column_fails_before_writing(sample_data_dir: Path, tmp_path: Path) -> None:
+    orders_path = sample_data_dir / "olist_orders_dataset.csv"
+    orders = pd.read_csv(orders_path).drop(columns=["order_status"])
+    orders.to_csv(orders_path, index=False)
+    db_path = tmp_path / "olist.db"
+
+    with pytest.raises(ValueError, match="missing required column.*order_status"):
+        load_database(sample_data_dir, db_path)
+
+    assert not db_path.exists()
 
 
 def test_load_creates_tables_indexes_and_clean_views(sample_db: Path) -> None:
@@ -40,6 +53,29 @@ def test_duplicate_order_ids_fail_before_writing(sample_data_dir: Path, tmp_path
 
     with pytest.raises(ValueError, match="duplicate key values.*orders"):
         load_database(sample_data_dir, tmp_path / "olist.db")
+
+
+def test_load_database_main_reports_counts(
+    monkeypatch: pytest.MonkeyPatch, sample_data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db_path = tmp_path / "cli.db"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "load_database.py",
+            "--data-dir",
+            str(sample_data_dir),
+            "--db-path",
+            str(db_path),
+        ],
+    )
+
+    main()
+
+    output = capsys.readouterr().out
+    assert "Loaded 7 tables" in output
+    assert db_path.exists()
 
 
 def test_null_order_identifier_fails_before_writing(sample_data_dir: Path, tmp_path: Path) -> None:
