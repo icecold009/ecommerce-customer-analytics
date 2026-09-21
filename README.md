@@ -52,6 +52,8 @@ Before writing the database, the loader rejects null primary-key identifiers and
 
 The cleaned views are used for delivery and cohort analysis. Payment-based revenue and RFM use the intersection of `cleaned_orders` and `order_payment_totals`. The canonical extract contains one delivered order (`bfbd0f9bdef84302105ad712db648a6c`) without a payment row; the validation query surfaces it and payment-based analyses intentionally exclude it. Category analysis retains untranslated categories through a fallback to the Portuguese name. Raw tables remain available for validation and future analyses. Orders removed from `cleaned_orders` are not delivered or lack one of the timestamps required for delivery analysis.
 
+`sql/validation.sql` preserves its original row-count, duplicate-order, and missing-payment result sets, then appends a machine-testable summary with stable `check_name` and `violation_count` columns. The summary checks relational orphans, invalid monetary values, impossible delivery ordering, missing delivered-order payments or items, and missing category translations. Untranslated categories are an explicit data-quality signal and remain usable through the documented Portuguese-name fallback.
+
 ## RFM definitions
 
 RFM is calculated per `customer_unique_id` over delivered orders:
