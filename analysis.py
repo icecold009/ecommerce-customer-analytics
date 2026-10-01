@@ -156,7 +156,7 @@ def calculate_revenue_reconciliation(db_path: str | Path) -> dict[str, float | i
 
 
 def _score_quintile(values: pd.Series, *, higher_is_better: bool) -> pd.Series:
-    ranks = values.rank(method="first", ascending=True)
+    ranks = values.rank(method="average", ascending=True)
     base_score = ((ranks / len(values)) * 5).clip(lower=1, upper=5).astype(int)
     return base_score if higher_is_better else 6 - base_score
 
