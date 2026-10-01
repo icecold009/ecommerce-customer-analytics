@@ -46,6 +46,8 @@ REQUIRED_TIMESTAMP_COLUMNS: Mapping[str, tuple[str, ...]] = {
     "orders": ("order_purchase_timestamp",),
 }
 
+VALIDATION_SUMMARY_MARKER = "-- Machine-testable data-quality summary. Existing result sets above remain unchanged."
+
 
 def _validate_required_values(table_name: str, frame: pd.DataFrame) -> None:
     """Reject missing identifiers and invalid timestamps before any DB writes."""
@@ -198,6 +200,19 @@ def load_database(data_dir: str | Path, db_path: str | Path) -> dict[str, int]:
         connection.commit()
 
     return {table_name: len(frame) for table_name, frame in tables.items()}
+
+
+def get_validation_summary(db_path: str | Path) -> list[tuple[str, int]]:
+    """Return the existing SQL data-quality summary in its deterministic order."""
+    validation_sql_path = Path(__file__).resolve().parent / "sql" / "validation.sql"
+    validation_sql = validation_sql_path.read_text(encoding="utf-8")
+    _, marker, summary_sql = validation_sql.partition(VALIDATION_SUMMARY_MARKER)
+    if not marker:
+        raise ValueError(f"Validation summary marker not found in {validation_sql_path}")
+
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(summary_sql).fetchall()
+    return [(str(check_name), int(violation_count)) for check_name, violation_count in rows]
 
 
 def main() -> None:

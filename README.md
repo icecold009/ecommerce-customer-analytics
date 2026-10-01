@@ -91,7 +91,7 @@ test files inside the checkout instead:
 python -m pytest --basetemp .pytest-tmp
 ```
 
-The runtime prints loaded row counts and generates six deterministic PNGs: monthly revenue, payment-method revenue, delivery time by state, RFM segment counts, RFM revenue contribution, and cohort retention. It also writes `analysis_summary.json`, a deterministic bundle with `schema_version`, named business-query records, aggregated `rfm_segments` rows (`segment`, `customers`, `revenue`), `cohort_retention` rows (`cohort_month`, `cohort_index`, `active_customers`, `cohort_customers`, `retention_rate`), and the `revenue_reconciliation` fields.
+`load_database.py` prints loaded row counts. The `analysis.py` runtime generates six deterministic PNGs and reports every data-quality check from `sql/validation.sql` with its violation count. A non-zero count is visible in the CLI and does not stop analysis in this stage. The charts are monthly revenue, payment-method revenue, delivery time by state, RFM segment counts, RFM revenue contribution, and cohort retention. It also writes `analysis_summary.json`, a deterministic bundle with `schema_version`, named business-query records, aggregated `rfm_segments` rows (`segment`, `customers`, `revenue`), `cohort_retention` rows (`cohort_month`, `cohort_index`, `active_customers`, `cohort_customers`, `retention_rate`), and the `revenue_reconciliation` fields.
 
 Business-query results also include `review_quality_by_state`, which reports reviewed orders, average review score, and the fraction of reviewed orders with a score of 1 or 2. Reviews are averaged per order before the customer-state join so multiple review rows cannot multiply order results.
 

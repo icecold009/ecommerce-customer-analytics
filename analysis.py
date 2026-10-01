@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-from load_database import load_database
+from load_database import get_validation_summary, load_database
 
 
 SEGMENTS = {
@@ -385,6 +385,9 @@ def main() -> None:
     print(f"Generated {len(paths)} artifacts in {args.output_dir}")
     for path in paths:
         print(f"  {path.name}")
+    print("Data-quality checks:")
+    for check_name, violation_count in get_validation_summary(args.db_path):
+        print(f"  {check_name}: {violation_count:,} violation(s)")
 
 
 if __name__ == "__main__":
