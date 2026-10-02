@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from load_database import REQUIRED_FILES, load_database, main
+from load_database import REQUIRED_FILES, get_validation_summary, load_database, main
 
 
 def test_missing_required_csv_fails_fast(tmp_path: Path) -> None:
@@ -79,20 +79,25 @@ def test_load_database_main_reports_counts(
 
 
 def _validation_summary(db_path: Path) -> dict[str, int]:
-    validation_sql = Path("sql/validation.sql").read_text(encoding="utf-8")
-    summary_sql = validation_sql.split(
-        "-- Machine-testable data-quality summary. Existing result sets above remain unchanged.",
-        1,
-    )[1]
-    with sqlite3.connect(db_path) as connection:
-        return dict(connection.execute(summary_sql).fetchall())
+    return dict(get_validation_summary(db_path))
 
 
 def test_validation_summary_reports_no_violations_for_clean_fixture(sample_db: Path) -> None:
-    summary = _validation_summary(sample_db)
+    rows = get_validation_summary(sample_db)
+    summary = dict(rows)
 
     assert summary
+    assert [check_name for check_name, _ in rows] == sorted(summary)
     assert all(violation_count == 0 for violation_count in summary.values())
+
+
+def test_validation_summary_requires_the_sql_marker(
+    sample_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("load_database.VALIDATION_SUMMARY_MARKER", "-- marker not present")
+
+    with pytest.raises(ValueError, match="Validation summary marker not found"):
+        get_validation_summary(sample_db)
 
 
 def test_validation_summary_surfaces_injected_relational_defects(sample_db: Path) -> None:
