@@ -9,8 +9,12 @@ import pandas as pd
 import pytest
 
 from analysis import (
+    VALIDATION_KNOWN_CHECKS,
+    VALIDATION_WARNING_CHECKS,
+    ValidationPolicyError,
     _score_quintile,
     _segment,
+    _validation_check_status,
     calculate_cohort_retention,
     calculate_revenue_reconciliation,
     calculate_rfm,
@@ -264,3 +268,104 @@ def test_analysis_main_runs_pipeline(monkeypatch: pytest.MonkeyPatch, sample_dat
     assert "Data-quality checks:" in output
     assert "orders_missing_customer: 0 violation(s)" in output
     assert "products_without_category_translation: 1 violation(s)" in output
+
+
+@pytest.mark.parametrize("check_name", sorted(VALIDATION_KNOWN_CHECKS))
+def test_validation_policy_classifies_every_known_check(check_name: str) -> None:
+    expected = "warning" if check_name in VALIDATION_WARNING_CHECKS else "fatal"
+
+    assert _validation_check_status(check_name, 1) == expected
+    assert _validation_check_status(check_name, 0) is None
+
+
+@pytest.mark.parametrize("violation_count", [0, 1])
+def test_unknown_validation_check_is_fatal_even_without_violations(violation_count: int) -> None:
+    assert _validation_check_status("future_unknown_check", violation_count) == "fatal"
+
+
+def test_unknown_validation_check_stops_pipeline_even_with_zero_violations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("analysis.load_database", lambda *_args: {})
+    monkeypatch.setattr("analysis.get_validation_summary", lambda _db_path: [("future_unknown_check", 0)])
+    generated: list[bool] = []
+    monkeypatch.setattr("analysis.generate_outputs", lambda *_args: generated.append(True))
+
+    with pytest.raises(ValidationPolicyError, match="future_unknown_check"):
+        run_pipeline("data", tmp_path / "unknown.db", tmp_path / "unknown-output")
+
+    assert generated == []
+
+
+@pytest.mark.parametrize(
+    "check_name",
+    sorted(VALIDATION_KNOWN_CHECKS - VALIDATION_WARNING_CHECKS),
+)
+def test_fatal_validation_stops_pipeline_before_analysis(
+    check_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("analysis.load_database", lambda *_args: {})
+    monkeypatch.setattr("analysis.get_validation_summary", lambda _db_path: [(check_name, 1)])
+    generated: list[bool] = []
+    monkeypatch.setattr("analysis.generate_outputs", lambda *_args: generated.append(True))
+
+    with pytest.raises(ValidationPolicyError, match=check_name):
+        run_pipeline("data", tmp_path / "fatal.db", tmp_path / "fatal-output")
+
+    assert generated == []
+
+
+def test_sql_fixture_fatal_validation_stops_before_business_queries(
+    sample_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    items_path = sample_data_dir / "olist_order_items_dataset.csv"
+    items = pd.read_csv(items_path)
+    invalid_item = items.iloc[[0]].copy()
+    invalid_item.loc[:, "order_id"] = "missing-order"
+    invalid_item.loc[:, "order_item_id"] = 999
+    pd.concat([items, invalid_item], ignore_index=True).to_csv(items_path, index=False)
+
+    generated: list[bool] = []
+    queried: list[bool] = []
+    monkeypatch.setattr("analysis.generate_outputs", lambda *_args: generated.append(True))
+    monkeypatch.setattr("analysis.run_business_queries", lambda *_args: queried.append(True))
+    db_path = tmp_path / "invalid.db"
+    output_dir = tmp_path / "invalid-output"
+
+    with pytest.raises(ValidationPolicyError) as error:
+        run_pipeline(sample_data_dir, db_path, output_dir)
+
+    assert ("order_items_missing_order", 1) in error.value.fatal_checks
+    assert generated == []
+    assert queried == []
+    assert not output_dir.exists()
+
+
+def test_analysis_cli_reports_fatal_validation_before_generating_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    summary = [("orders_missing_customer", 2), ("delivered_orders_without_payment", 1)]
+    monkeypatch.setattr("analysis.load_database", lambda *_args: {})
+    monkeypatch.setattr("analysis.get_validation_summary", lambda _db_path: summary)
+    generated: list[bool] = []
+    monkeypatch.setattr("analysis.generate_outputs", lambda *_args: generated.append(True))
+    monkeypatch.setattr(
+        "sys.argv",
+        ["analysis.py", "--db-path", str(tmp_path / "fatal.db"), "--output-dir", str(tmp_path / "out")],
+    )
+
+    with pytest.raises(SystemExit) as error:
+        main()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 2
+    assert "orders_missing_customer: 2 violation(s)" in output
+    assert "delivered_orders_without_payment: 1 violation(s)" in output
+    assert generated == []
