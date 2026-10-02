@@ -237,6 +237,12 @@ def test_run_pipeline_loads_database_and_writes_all_outputs(
 def test_analysis_main_runs_pipeline(monkeypatch: pytest.MonkeyPatch, sample_data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     db_path = tmp_path / "cli.db"
     output_dir = tmp_path / "cli-outputs"
+    translations_path = sample_data_dir / "product_category_name_translation.csv"
+    translations = pd.read_csv(translations_path)
+    translations.loc[translations["product_category_name"] != "perfumaria"].to_csv(
+        translations_path,
+        index=False,
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -253,4 +259,8 @@ def test_analysis_main_runs_pipeline(monkeypatch: pytest.MonkeyPatch, sample_dat
 
     main()
 
-    assert "Generated 7 artifacts" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Generated 7 artifacts" in output
+    assert "Data-quality checks:" in output
+    assert "orders_missing_customer: 0 violation(s)" in output
+    assert "products_without_category_translation: 1 violation(s)" in output
