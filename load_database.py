@@ -9,7 +9,6 @@ from typing import Mapping
 
 import pandas as pd
 
-
 REQUIRED_FILES: Mapping[str, str] = {
     "customers": "olist_customers_dataset.csv",
     "orders": "olist_orders_dataset.csv",
@@ -46,7 +45,10 @@ REQUIRED_TIMESTAMP_COLUMNS: Mapping[str, tuple[str, ...]] = {
     "orders": ("order_purchase_timestamp",),
 }
 
-VALIDATION_SUMMARY_MARKER = "-- Machine-testable data-quality summary. Existing result sets above remain unchanged."
+VALIDATION_SUMMARY_MARKER = (
+    "-- Machine-testable data-quality summary. "
+    "Existing result sets above remain unchanged."
+)
 
 
 def _validate_required_values(table_name: str, frame: pd.DataFrame) -> None:

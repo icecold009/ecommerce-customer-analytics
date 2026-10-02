@@ -35,8 +35,18 @@ def test_load_creates_tables_indexes_and_clean_views(sample_db: Path) -> None:
         assert set(REQUIRED_FILES) <= tables
         assert {"cleaned_orders", "order_payment_totals", "cleaned_order_items"} <= views
         assert connection.execute("SELECT COUNT(*) FROM cleaned_orders").fetchone()[0] == 3
-        assert connection.execute("SELECT payment_value FROM order_payment_totals WHERE order_id = 'o1'").fetchone()[0] == 12
-        assert connection.execute("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'").fetchone()[0] >= 4
+        assert (
+            connection.execute(
+                "SELECT payment_value FROM order_payment_totals WHERE order_id = 'o1'"
+            ).fetchone()[0]
+            == 12
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'"
+            ).fetchone()[0]
+            >= 4
+        )
 
 
 def test_database_load_is_repeatable(sample_data_dir: Path, tmp_path: Path) -> None:

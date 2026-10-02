@@ -17,7 +17,6 @@ import seaborn as sns
 
 from load_database import get_validation_summary, load_database
 
-
 SEGMENTS = {
     "Champions",
     "Loyal Customers",
@@ -305,7 +304,9 @@ def calculate_cohort_retention(db_path: str | Path) -> pd.DataFrame:
         INNER JOIN customers AS c ON c.customer_id = co.customer_id
         """,
     )
-    orders["purchase_month"] = pd.to_datetime(orders["order_purchase_timestamp"], errors="coerce").dt.to_period("M")
+    orders["purchase_month"] = pd.to_datetime(
+        orders["order_purchase_timestamp"], errors="coerce"
+    ).dt.to_period("M")
     orders = orders.dropna(subset=["customer_unique_id", "purchase_month"]).drop_duplicates(
         ["customer_unique_id", "purchase_month"]
     )
@@ -333,7 +334,16 @@ def calculate_cohort_retention(db_path: str | Path) -> pd.DataFrame:
     return retention.sort_values(["cohort_month", "cohort_index"]).reset_index(drop=True)
 
 
-def _save_bar(data: pd.DataFrame, x: str, y: str, title: str, filename: str, output_dir: Path, *, horizontal: bool = False) -> Path:
+def _save_bar(
+    data: pd.DataFrame,
+    x: str,
+    y: str,
+    title: str,
+    filename: str,
+    output_dir: Path,
+    *,
+    horizontal: bool = False,
+) -> Path:
     fig, axis = plt.subplots(figsize=(9, 5))
     if horizontal:
         sns.barplot(data=data, x=y, y=x, ax=axis, color="#2563eb")
@@ -398,11 +408,52 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
     reconciliation = calculate_revenue_reconciliation(db_path)
 
     written = [
-        _save_bar(business["monthly_revenue"], "month", "revenue", "Monthly revenue", "monthly_revenue.png", output_dir),
-        _save_bar(business["payment_method"], "payment_method", "revenue", "Revenue by payment method", "payment_method_revenue.png", output_dir, horizontal=True),
-        _save_bar(business["delivery_by_state"], "customer_state", "average_delivery_days", "Average delivery time by state", "delivery_by_state.png", output_dir, horizontal=True),
-        _save_bar(rfm["segment"].value_counts().rename_axis("segment").reset_index(name="customers"), "segment", "customers", "Customers by RFM segment", "rfm_segments.png", output_dir, horizontal=True),
-        _save_bar(rfm.groupby("segment", as_index=False)["monetary"].sum().sort_values("monetary", ascending=False), "segment", "monetary", "Revenue contribution by RFM segment", "rfm_revenue.png", output_dir, horizontal=True),
+        _save_bar(
+            business["monthly_revenue"],
+            "month",
+            "revenue",
+            "Monthly revenue",
+            "monthly_revenue.png",
+            output_dir,
+        ),
+        _save_bar(
+            business["payment_method"],
+            "payment_method",
+            "revenue",
+            "Revenue by payment method",
+            "payment_method_revenue.png",
+            output_dir,
+            horizontal=True,
+        ),
+        _save_bar(
+            business["delivery_by_state"],
+            "customer_state",
+            "average_delivery_days",
+            "Average delivery time by state",
+            "delivery_by_state.png",
+            output_dir,
+            horizontal=True,
+        ),
+        _save_bar(
+            rfm["segment"].value_counts().rename_axis("segment").reset_index(name="customers"),
+            "segment",
+            "customers",
+            "Customers by RFM segment",
+            "rfm_segments.png",
+            output_dir,
+            horizontal=True,
+        ),
+        _save_bar(
+            rfm.groupby("segment", as_index=False)["monetary"]
+            .sum()
+            .sort_values("monetary", ascending=False),
+            "segment",
+            "monetary",
+            "Revenue contribution by RFM segment",
+            "rfm_revenue.png",
+            output_dir,
+            horizontal=True,
+        ),
     ]
 
     pivot = retention.pivot(index="cohort_month", columns="cohort_index", values="retention_rate")
@@ -432,7 +483,11 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
     return written
 
 
-def run_pipeline(data_dir: str | Path = "data", db_path: str | Path = "olist.db", output_dir: str | Path = "outputs") -> list[Path]:
+def run_pipeline(
+    data_dir: str | Path = "data",
+    db_path: str | Path = "olist.db",
+    output_dir: str | Path = "outputs",
+) -> list[Path]:
     load_database(data_dir, db_path)
     validation_summary = get_validation_summary(db_path)
     _enforce_validation_policy(validation_summary)

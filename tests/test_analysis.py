@@ -58,7 +58,14 @@ def test_rfm_has_one_segment_per_customer_and_reconciles(sample_db: Path) -> Non
     assert rfm["customer_unique_id"].is_unique
     assert rfm["frequency"].sum() == 3
     assert rfm["monetary"].sum() == 51
-    assert set(rfm["segment"]) <= {"Champions", "Loyal Customers", "Big Spenders", "At Risk", "Lost", "Potential"}
+    assert set(rfm["segment"]) <= {
+        "Champions",
+        "Loyal Customers",
+        "Big Spenders",
+        "At Risk",
+        "Lost",
+        "Potential",
+    }
 
 
 def test_rfm_accepts_explicit_snapshot_date(sample_db: Path) -> None:
@@ -238,7 +245,12 @@ def test_run_pipeline_loads_database_and_writes_all_outputs(
     assert all(path.exists() and path.stat().st_size > 0 for path in written)
 
 
-def test_analysis_main_runs_pipeline(monkeypatch: pytest.MonkeyPatch, sample_data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_analysis_main_runs_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_data_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     db_path = tmp_path / "cli.db"
     output_dir = tmp_path / "cli-outputs"
     translations_path = sample_data_dir / "product_category_name_translation.csv"

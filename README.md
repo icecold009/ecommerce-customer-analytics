@@ -81,14 +81,6 @@ python -m pip install -r requirements-dev.txt
 
 # Place the seven CSV files in .\data first.
 python .\analysis.py --data-dir .\data --db-path .\olist.db --output-dir .\outputs
-python -m pytest
-```
-
-If a Windows-managed temp directory denies pytest access, keep the temporary
-test files inside the checkout instead:
-
-```powershell
-python -m pytest --basetemp .pytest-tmp
 ```
 
 `load_database.py` prints loaded row counts. The `analysis.py` runtime generates six deterministic PNGs and reports every data-quality check from `sql/validation.sql` with its violation count. `delivered_orders_without_payment` and `products_without_category_translation` are warnings and allow analysis to finish. Non-zero counts for other known checks, and any unknown future check name, stop analysis before business queries and artifact generation. The charts are monthly revenue, payment-method revenue, delivery time by state, RFM segment counts, RFM revenue contribution, and cohort retention. It also writes `analysis_summary.json`, a deterministic bundle with `schema_version`, named business-query records, aggregated `rfm_segments` rows (`segment`, `customers`, `revenue`), `cohort_retention` rows (`cohort_month`, `cohort_index`, `active_customers`, `cohort_customers`, `retention_rate`), and the `revenue_reconciliation` fields.
@@ -106,5 +98,14 @@ For cohorts with at least 100 customers, month-one delivered-order retention ran
 Recommended actions are to investigate delivery capacity in the northern outlier states, test category-specific retention offers for high-value customers, and treat the very low repeat-order rate as a retention problem to validate with campaign and marketplace data. These are directional recommendations from historical marketplace data, not causal conclusions. Limitations include the 2016–2018 coverage window, missing customer demographics, anonymized records, and the difference between delivered order payment value and recognized accounting revenue.
 
 ## Verification
+
+Use Python 3.11 and run these commands from the repository root:
+
+```console
+python -m pip install -r requirements-dev.txt
+ruff check .
+python -m pytest --basetemp .pytest-tmp tests/test_analysis.py::test_run_pipeline_loads_database_and_writes_all_outputs tests/test_analysis.py::test_sql_fixture_fatal_validation_stops_before_business_queries
+python -m pytest --basetemp .pytest-tmp --cov=analysis --cov=load_database --cov-report=term-missing
+```
 
 The automated suite uses a small relational fixture and checks missing-input failures, repeatable loading, table/view/index creation, payment aggregation, category joins, RFM reconciliation, cohort retention, and all chart artifacts. A full-dataset run is required before making claims about actual business performance.
