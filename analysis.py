@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -14,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from matplotlib.ticker import FuncFormatter
 
 from load_database import get_validation_summary, load_database
 
@@ -49,6 +51,23 @@ VALIDATION_KNOWN_CHECKS = frozenset(
         "products_without_category_translation",
     }
 )
+
+SEGMENT_COLORS = {
+    "Champions": "#0072B2",
+    "Loyal Customers": "#56B4E9",
+    "Big Spenders": "#E69F00",
+    "At Risk": "#D55E00",
+    "Lost": "#CC79A7",
+    "Potential": "#009E73",
+}
+PAYMENT_COLORS = {
+    "boleto": "#E69F00",
+    "credit_card": "#0072B2",
+    "debit_card": "#009E73",
+    "voucher": "#D55E00",
+}
+BAR_COLOR = "#0072B2"
+LABEL_COLOR = "#243447"
 
 
 class ValidationPolicyError(ValueError):
@@ -334,29 +353,150 @@ def calculate_cohort_retention(db_path: str | Path) -> pd.DataFrame:
     return retention.sort_values(["cohort_month", "cohort_index"]).reset_index(drop=True)
 
 
+def _format_brazilian_number(value: float, decimals: int) -> str:
+    amount = f"{value:,.{decimals}f}"
+    integer, decimal, fraction = amount.partition(".")
+    suffix = f",{fraction}" if decimal else ""
+    return f"{integer.replace(',', '.')}{suffix}"
+
+
+def format_brl(value: float, decimals: int = 2) -> str:
+    """Format a numeric value as Brazilian reais without scientific notation."""
+    return f"R$ {_format_brazilian_number(value, decimals)}"
+
+
+def format_percent(value: float, decimals: int = 1) -> str:
+    """Format a fraction such as 0.25 as a percentage such as 25.0%."""
+    return f"{_format_brazilian_number(value * 100, decimals)}%"
+
+
+def format_integer(value: float) -> str:
+    """Format a whole-number count with Brazilian thousands separators."""
+    return _format_brazilian_number(value, 0)
+
+
+def _format_brl_compact(value: float) -> str:
+    """Keep chart value labels readable while retaining an explicit BRL unit."""
+    absolute = abs(value)
+    if absolute >= 1_000_000:
+        return f"{format_brl(value / 1_000_000, decimals=1)}M"
+    if absolute >= 1_000:
+        return f"{format_brl(value / 1_000, decimals=1)}k"
+    return format_brl(value)
+
+
+def _format_brl_tick(value: float) -> str:
+    """Use short, localized thousands and millions on chart currency axes."""
+    absolute = abs(value)
+    if absolute >= 1_000_000:
+        return f"{format_brl(value / 1_000_000, decimals=1)}M"
+    if absolute >= 1_000:
+        return f"{format_brl(value / 1_000, decimals=0)}k"
+    return format_brl(value, decimals=0)
+
+
+def _humanize_label(value: object) -> str:
+    """Render raw category values as readable chart labels."""
+    label = str(value).strip()
+    if re.fullmatch(r"\d{4}-\d{2}", label):
+        return pd.Period(label, freq="M").strftime("%b %Y")
+    if re.fullmatch(r"[A-Z]{2}", label):
+        return label
+    return " + ".join(part.strip().replace("_", " ").title() for part in label.split(","))
+
+
+def _axis_label(column: str) -> str:
+    labels = {
+        "average_delivery_days": "Average delivery time (days)",
+        "customer_state": "Customer state",
+        "customers": "Unique customers",
+        "month": "Purchase month",
+        "monetary": "Revenue (BRL)",
+        "payment_method": "Payment type",
+        "revenue": "Revenue (BRL)",
+        "segment": "RFM segment",
+    }
+    return labels.get(column, column.replace("_", " ").title())
+
+
+def _bar_colors(data: pd.DataFrame, category_column: str) -> list[str]:
+    categories = data[category_column].astype(str)
+    if category_column == "segment":
+        return [SEGMENT_COLORS.get(category, BAR_COLOR) for category in categories]
+    if category_column == "payment_method":
+        return [
+            "#CC79A7" if "," in category else PAYMENT_COLORS.get(category, "#6B7280")
+            for category in categories
+        ]
+    return [BAR_COLOR] * len(categories)
+
+
+def _bar_value_label(value: float, value_column: str) -> str:
+    if value_column in {"revenue", "monetary"}:
+        return _format_brl_compact(value)
+    if value_column == "average_delivery_days":
+        return f"{value:.1f} d"
+    return format_integer(value)
+
+
 def _save_bar(
     data: pd.DataFrame,
     x: str,
     y: str,
     title: str,
+    caption: str,
     filename: str,
     output_dir: Path,
     *,
     horizontal: bool = False,
 ) -> Path:
     fig, axis = plt.subplots(figsize=(9, 5))
+    labels = [_humanize_label(value) for value in data[x]]
+    values = data[y].astype(float).tolist()
+    positions = list(range(len(labels)))
+    bars = None
     if horizontal:
-        sns.barplot(data=data, x=y, y=x, ax=axis, color="#2563eb")
+        bars = axis.barh(positions, values, color=_bar_colors(data, x))
+        axis.set_yticks(positions, labels=labels)
+        axis.invert_yaxis()
+        axis.set_xlim(0, max(values, default=0) * 1.28 or 1)
+        axis.set_xlabel(_axis_label(y))
+        axis.set_ylabel(_axis_label(x))
+        if y in {"revenue", "monetary"}:
+            axis.xaxis.set_major_formatter(
+                FuncFormatter(lambda value, _position: _format_brl_tick(value))
+            )
+        elif y == "customers":
+            axis.xaxis.set_major_formatter(
+                FuncFormatter(lambda value, _position: format_integer(value))
+            )
     else:
-        sns.barplot(data=data, x=x, y=y, ax=axis, color="#2563eb")
-    axis.set_title(title)
-    axis.set_xlabel(axis.get_xlabel().replace("_", " ").title())
-    axis.set_ylabel(axis.get_ylabel().replace("_", " ").title())
-    if not horizontal:
+        bars = axis.bar(positions, values, color=_bar_colors(data, x))
+        axis.set_xticks(positions, labels=labels)
+        axis.set_ylim(0, max(values, default=0) * 1.28 or 1)
+        axis.set_xlabel(_axis_label(x))
+        axis.set_ylabel(_axis_label(y))
         axis.tick_params(axis="x", labelrotation=45)
-        for label in axis.get_xticklabels():
-            label.set_horizontalalignment("right")
-    fig.tight_layout()
+        for tick_label in axis.get_xticklabels():
+            tick_label.set_horizontalalignment("right")
+        if y in {"revenue", "monetary"}:
+            axis.yaxis.set_major_formatter(
+                FuncFormatter(lambda value, _position: _format_brl_tick(value))
+            )
+    if bars is not None:
+        axis.bar_label(
+            bars,
+            labels=[_bar_value_label(value, y) for value in values],
+            padding=3,
+            fontsize=7 if not horizontal and len(labels) > 12 else 8,
+            color=LABEL_COLOR,
+            rotation=90 if not horizontal and len(labels) > 12 else 0,
+        )
+    axis.set_title(title, loc="left", pad=12, fontweight="bold", color="#1F2937")
+    axis.set_axisbelow(True)
+    axis.grid(axis="x" if horizontal else "y", color="#DCE3EA", linewidth=0.7)
+    fig.text(0.125, 0.012, caption, ha="left", va="bottom", fontsize=8, color="#475569")
+    fig.tight_layout(rect=(0, 0.075, 1, 1))
     path = output_dir / filename
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -413,6 +553,8 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
             "month",
             "revenue",
             "Monthly revenue",
+            "Order-level payment value for paid delivered orders, grouped by purchase month. "
+            "Bar values are abbreviated; see analysis_summary.json for exact totals.",
             "monthly_revenue.png",
             output_dir,
         ),
@@ -421,6 +563,8 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
             "payment_method",
             "revenue",
             "Revenue by payment method",
+            "Payment types are combined per order to avoid counting payment rows as orders. "
+            "Bar values are abbreviated; see analysis_summary.json for exact totals.",
             "payment_method_revenue.png",
             output_dir,
             horizontal=True,
@@ -430,6 +574,7 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
             "customer_state",
             "average_delivery_days",
             "Average delivery time by state",
+            "Elapsed days use delivered orders with the timestamps needed for this measure.",
             "delivery_by_state.png",
             output_dir,
             horizontal=True,
@@ -439,6 +584,7 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
             "segment",
             "customers",
             "Customers by RFM segment",
+            "Each unique customer has one segment; tied values receive equal quintile scores.",
             "rfm_segments.png",
             output_dir,
             horizontal=True,
@@ -450,6 +596,8 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
             "segment",
             "monetary",
             "Revenue contribution by RFM segment",
+            "Revenue sums order-level payments for each customer's delivered orders. "
+            "Bar values are abbreviated; see analysis_summary.json for exact totals.",
             "rfm_revenue.png",
             output_dir,
             horizontal=True,
@@ -459,22 +607,54 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
     pivot = retention.pivot(index="cohort_month", columns="cohort_index", values="retention_rate")
     figure_width = max(10, min(18, 0.65 * len(pivot.columns) + 3))
     figure_height = max(6, min(14, 0.35 * len(pivot.index) + 3))
-    annotate = pivot.size <= 100
+    annotate = int(pivot.count().sum()) <= 250
+    annotations = (
+        pivot.apply(
+            lambda column: column.map(
+                lambda value: format_percent(value, decimals=1) if pd.notna(value) else ""
+            )
+        )
+        if annotate
+        else False
+    )
     fig, axis = plt.subplots(figsize=(figure_width, figure_height))
     sns.heatmap(
         pivot,
-        annot=annotate,
-        fmt=".0%" if annotate else "",
-        cmap="Blues",
+        annot=annotations,
+        fmt="",
+        mask=pivot.isna(),
+        cmap="cividis",
         vmin=0,
         vmax=1,
         ax=axis,
+        annot_kws={"fontsize": 7},
         cbar_kws={"label": "Retention rate"},
+    )
+    if annotate:
+        for annotation in axis.texts:
+            column = int(annotation.get_position()[0])
+            row = int(annotation.get_position()[1])
+            value = pivot.iloc[row, column]
+            annotation.set_color("#17202A" if value >= 0.45 else "white")
+    colorbar = axis.collections[0].colorbar
+    colorbar.ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda value, _position: format_percent(value, decimals=0))
     )
     axis.set_title("Monthly cohort retention (delivered orders)")
     axis.set_xlabel("Months since first purchase")
     axis.set_ylabel("Cohort month")
-    fig.tight_layout()
+    axis.set_yticklabels([_humanize_label(label.get_text()) for label in axis.get_yticklabels()])
+    fig.text(
+        0.08,
+        0.012,
+        "Each cell is active customers divided by the original delivered-order cohort; "
+        "blanks mean no observed activity.",
+        ha="left",
+        va="bottom",
+        fontsize=8,
+        color="#475569",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     heatmap_path = output_dir / "cohort_retention.png"
     fig.savefig(heatmap_path, dpi=160)
     plt.close(fig)
