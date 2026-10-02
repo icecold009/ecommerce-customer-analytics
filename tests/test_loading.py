@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from analysis import VALIDATION_KNOWN_CHECKS
 from load_database import REQUIRED_FILES, get_validation_summary, load_database, main
 
 
@@ -88,6 +89,7 @@ def test_validation_summary_reports_no_violations_for_clean_fixture(sample_db: P
 
     assert summary
     assert [check_name for check_name, _ in rows] == sorted(summary)
+    assert set(summary) == VALIDATION_KNOWN_CHECKS
     assert all(violation_count == 0 for violation_count in summary.values())
 
 

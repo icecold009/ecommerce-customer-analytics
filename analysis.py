@@ -27,6 +27,68 @@ SEGMENTS = {
     "Potential",
 }
 
+VALIDATION_WARNING_CHECKS = frozenset(
+    {
+        "delivered_orders_without_payment",
+        "products_without_category_translation",
+    }
+)
+VALIDATION_KNOWN_CHECKS = frozenset(
+    {
+        "orders_missing_customer",
+        "order_items_missing_order",
+        "order_items_missing_product",
+        "payments_missing_order",
+        "reviews_missing_order",
+        "order_items_invalid_price",
+        "order_items_invalid_freight",
+        "payments_invalid_value",
+        "delivered_before_purchase",
+        "estimated_before_purchase",
+        "delivered_orders_without_payment",
+        "delivered_orders_without_items",
+        "products_without_category_translation",
+    }
+)
+
+
+class ValidationPolicyError(ValueError):
+    """Raised when validation finds a blocking check or an unknown check name."""
+
+    def __init__(
+        self,
+        validation_summary: list[tuple[str, int]],
+        fatal_checks: list[tuple[str, int]],
+    ) -> None:
+        self.validation_summary = tuple(validation_summary)
+        self.fatal_checks = tuple(fatal_checks)
+        details = ", ".join(
+            f"{check_name} ({violation_count:,} violation(s))"
+            for check_name, violation_count in fatal_checks
+        )
+        super().__init__(f"Blocking data-quality checks: {details}")
+
+
+def _validation_check_status(check_name: str, violation_count: int) -> str | None:
+    """Return warning, fatal, or None according to the documented check policy."""
+    if check_name not in VALIDATION_KNOWN_CHECKS:
+        return "fatal"
+    if violation_count == 0:
+        return None
+    if check_name in VALIDATION_WARNING_CHECKS:
+        return "warning"
+    return "fatal"
+
+
+def _enforce_validation_policy(validation_summary: list[tuple[str, int]]) -> None:
+    fatal_checks = [
+        (check_name, violation_count)
+        for check_name, violation_count in validation_summary
+        if _validation_check_status(check_name, violation_count) == "fatal"
+    ]
+    if fatal_checks:
+        raise ValidationPolicyError(validation_summary, fatal_checks)
+
 
 def _query(db_path: str | Path, sql: str) -> pd.DataFrame:
     with sqlite3.connect(db_path) as connection:
@@ -372,6 +434,8 @@ def generate_outputs(db_path: str | Path, output_dir: str | Path) -> list[Path]:
 
 def run_pipeline(data_dir: str | Path = "data", db_path: str | Path = "olist.db", output_dir: str | Path = "outputs") -> list[Path]:
     load_database(data_dir, db_path)
+    validation_summary = get_validation_summary(db_path)
+    _enforce_validation_policy(validation_summary)
     return generate_outputs(db_path, output_dir)
 
 
@@ -381,7 +445,13 @@ def main() -> None:
     parser.add_argument("--db-path", type=Path, default=Path("olist.db"))
     parser.add_argument("--output-dir", type=Path, default=Path("outputs"))
     args = parser.parse_args()
-    paths = run_pipeline(args.data_dir, args.db_path, args.output_dir)
+    try:
+        paths = run_pipeline(args.data_dir, args.db_path, args.output_dir)
+    except ValidationPolicyError as error:
+        print("Data-quality checks:")
+        for check_name, violation_count in error.validation_summary:
+            print(f"  {check_name}: {violation_count:,} violation(s)")
+        parser.error(str(error))
     print(f"Generated {len(paths)} artifacts in {args.output_dir}")
     for path in paths:
         print(f"  {path.name}")
