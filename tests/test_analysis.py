@@ -12,18 +12,39 @@ from analysis import (
     VALIDATION_KNOWN_CHECKS,
     VALIDATION_WARNING_CHECKS,
     ValidationPolicyError,
+    _format_brl_compact,
+    _format_brl_tick,
     _score_quintile,
     _segment,
     _validation_check_status,
     calculate_cohort_retention,
     calculate_revenue_reconciliation,
     calculate_rfm,
+    format_brl,
+    format_integer,
+    format_percent,
     generate_outputs,
     main,
     run_business_queries,
     run_pipeline,
     validate_rfm,
 )
+
+
+def test_brl_formatter_uses_brazilian_grouping_and_decimal_separator() -> None:
+    assert format_brl(15421082.85) == "R$ 15.421.082,85"
+    assert format_brl(15421082.85, decimals=0) == "R$ 15.421.083"
+    assert format_brl(-1234.5) == "R$ -1.234,50"
+    assert _format_brl_compact(15421082.85) == "R$ 15,4M"
+    assert _format_brl_tick(1200000) == "R$ 1,2M"
+    assert format_integer(58673) == "58.673"
+
+
+def test_percent_formatter_keeps_small_rates_visible() -> None:
+    assert format_percent(0.0049, decimals=2) == "0,49%"
+    assert format_percent(0.25) == "25,0%"
+    assert format_percent(1) == "100,0%"
+    assert format_percent(12.345) == "1.234,5%"
 
 
 def test_business_queries_use_translated_categories_and_order_level_payments(sample_db: Path) -> None:
@@ -213,6 +234,14 @@ def test_generate_outputs_writes_expected_charts(sample_db: Path, tmp_path: Path
     written = generate_outputs(sample_db, tmp_path / "outputs")
     assert len(written) == 7
     assert all(path.exists() and path.stat().st_size > 0 for path in written)
+    assert {path.name for path in written if path.suffix == ".png"} == {
+        "monthly_revenue.png",
+        "payment_method_revenue.png",
+        "delivery_by_state.png",
+        "rfm_segments.png",
+        "rfm_revenue.png",
+        "cohort_retention.png",
+    }
 
     bundle_path = tmp_path / "outputs" / "analysis_summary.json"
     bundle_text = bundle_path.read_text(encoding="utf-8")
