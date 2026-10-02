@@ -63,7 +63,7 @@ RFM is calculated per `customer_unique_id` over delivered orders:
 - Frequency: distinct delivered orders.
 - Monetary: summed order payment value from `order_payment_totals`.
 
-Scores use deterministic rank-based quintiles. Segment precedence is explicit: Champions, Loyal Customers, Big Spenders, At Risk, Lost, then Potential. `analysis.py` validates that every customer has exactly one valid segment and that metrics are non-negative.
+Scores use rank-based quintiles with average ranks, so tied values receive equal scores and row order cannot change customer scores or segments. Segment precedence is explicit: Champions, Loyal Customers, Big Spenders, At Risk, Lost, then Potential. `analysis.py` validates that every customer has exactly one valid segment and that metrics are non-negative.
 
 ## Cohort definition
 
@@ -97,9 +97,9 @@ Business-query results also include `review_quality_by_state`, which reports rev
 
 ## Findings and recommendations
 
-The current run used the canonical Olist extract downloaded on 2026-09-10. It included 96,470 delivered orders, of which 96,469 had payment rows used for payment-based analysis, plus 93,349 unique customers and 22 purchase months. Paid delivered orders totalled R$15,421,082.85 in order-level payment value. Item plus freight totals for those same orders were R$15,418,251.37, a measured variance of R$2,831.48 that should not be silently treated as a data error because payment and item measures represent different business concepts. There were 7,495 item rows without an English translation; these remained in category analysis under their Portuguese category name. The largest translated product categories by item value were health_beauty (R$1,412,089.53), watches_gifts (R$1,264,016.98), and bed_bath_table (R$1,225,209.26). Credit-card-only orders contributed R$11,961,042.50; mixed credit-card/voucher orders were canonicalized into one R$324,442.66 category.
+The current run used the canonical Olist extract downloaded on 2026-09-10. It included 96,470 delivered orders, of which 96,469 had payment rows used for payment-based analysis, plus 93,349 unique customers and 22 paid purchase months. Paid delivered orders totalled R$15,421,082.85 in order-level payment value. Item plus freight totals for those same orders were R$15,418,251.37, a measured variance of R$2,831.48 that should not be silently treated as a data error because payment and item measures represent different business concepts. There were 7,495 item rows without an English translation; these remained in category analysis under their Portuguese category name. The largest translated product categories by item value were health_beauty (R$1,412,089.53), watches_gifts (R$1,264,016.98), and bed_bath_table (R$1,225,209.26). Credit-card-only orders contributed R$11,961,042.50; mixed credit-card/voucher orders were canonicalized into one R$324,442.66 category.
 
-Delivery duration was longest in RR (29.39 days), AP (27.19), and AM (26.43). RFM produced 48,447 Potential customers, 14,926 Big Spenders, 12,188 Loyal Customers, 9,127 Lost customers, 5,827 At Risk customers, and 2,834 Champions. Big Spenders contributed the largest segment revenue at R$6,605,562.21, followed by Potential at R$4,650,478.02.
+Delivery duration was longest in RR (29.39 days), AP (27.19), and AM (26.43). With tied metric values receiving equal quintile scores, RFM produced 58,673 Potential customers, 17,346 Big Spenders, 14,742 Lost customers, 1,337 Loyal Customers, 1,027 Champions, and 224 At Risk customers. Big Spenders contributed the largest segment revenue at R$7,659,483.05, followed by Potential at R$5,622,178.45.
 
 For cohorts with at least 100 customers, month-one delivered-order retention ranged from 0.18% to 0.72%, with a 0.49% median. The one-customer 2016-12 cohort is excluded from that comparison because its 100% rate is not representative.
 

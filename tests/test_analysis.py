@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from analysis import (
+    _score_quintile,
     _segment,
     calculate_cohort_retention,
     calculate_revenue_reconciliation,
@@ -61,6 +62,49 @@ def test_rfm_accepts_explicit_snapshot_date(sample_db: Path) -> None:
 
     assert set(rfm["snapshot_date"]) == {"2021-03-01"}
     assert dict(zip(rfm["customer_unique_id"], rfm["recency"])) == {"u1": 28, "u2": 45}
+
+
+@pytest.mark.parametrize("higher_is_better", [True, False])
+def test_rfm_tied_values_receive_equal_quintile_scores(higher_is_better: bool) -> None:
+    values = pd.Series([10, 10, 20, 20], index=["a", "b", "c", "d"])
+
+    scores = _score_quintile(values, higher_is_better=higher_is_better)
+
+    assert scores["a"] == scores["b"]
+    assert scores["c"] == scores["d"]
+
+
+def test_rfm_quintile_score_direction_is_preserved() -> None:
+    values = pd.Series([1, 2, 3, 4, 5])
+
+    assert _score_quintile(values, higher_is_better=True).tolist() == [1, 2, 3, 4, 5]
+    assert _score_quintile(values, higher_is_better=False).tolist() == [5, 4, 3, 2, 1]
+
+
+def test_rfm_scores_and_segments_do_not_depend_on_customer_row_order() -> None:
+    metrics = pd.DataFrame(
+        {
+            "recency": [5, 6, 7, 8, 9, 10, 1, 2, 3, 4],
+            "frequency": [1, 2, 3, 4, 5, 6, 7, 7, 8, 9],
+            "monetary": [1, 2, 3, 4, 7, 8, 5, 6, 9, 10],
+        },
+        index=[f"customer-{number}" for number in range(1, 11)],
+    )
+
+    def score_and_segment(frame: pd.DataFrame) -> pd.DataFrame:
+        scored = frame.copy()
+        scored["recency_score"] = _score_quintile(scored["recency"], higher_is_better=False)
+        scored["frequency_score"] = _score_quintile(scored["frequency"], higher_is_better=True)
+        scored["monetary_score"] = _score_quintile(scored["monetary"], higher_is_better=True)
+        scored["segment"] = scored.apply(_segment, axis=1)
+        return scored[["recency_score", "frequency_score", "monetary_score", "segment"]]
+
+    original = score_and_segment(metrics).sort_index()
+    shuffled = score_and_segment(metrics.iloc[[0, 1, 2, 3, 4, 5, 7, 6, 8, 9]]).sort_index()
+
+    pd.testing.assert_frame_equal(original, shuffled)
+    assert original.loc["customer-7", "frequency_score"] == original.loc["customer-8", "frequency_score"]
+    assert original.loc["customer-7", "segment"] == original.loc["customer-8", "segment"]
 
 
 @pytest.mark.parametrize(
