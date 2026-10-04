@@ -1,0 +1,19 @@
+flowchart TB
+  %% Solid arrows: runtime/data dependency; dotted arrows: optional, build or local-only boundary.
+  LOAD["CSV validation and relational SQLite load"]
+  ANALYZE["Order aggregates, RFM/cohort analysis and chart pipeline"]
+  SQL["Business queries, cohorts and validation SQL"]
+  DATA["External Olist CSV inputs and generated artifacts"]
+  DB["SQLite tables and relationships"]
+  REPORT["Six chart outputs and JSON summary"]
+  DRIFT["LOCAL ONLY: average-tie RFM and enforced validation policy"]
+  SUPPORT["Supporting tests, assets, documentation and delivery config"]
+  DATA --> LOAD
+  LOAD --> ANALYZE
+  SQL -. separately runnable queries .-> DB
+  ANALYZE --> DATA
+  LOAD --> DB
+  DB --> ANALYZE
+  ANALYZE --> REPORT
+  DRIFT -. uncommitted canonical changes .-> ANALYZE
+  SUPPORT -. supports .-> LOAD

@@ -113,3 +113,41 @@ python -m pytest --basetemp .pytest-tmp --cov=analysis --cov=load_database --cov
 ```
 
 The automated suite uses a small relational fixture and checks missing-input failures, repeatable loading, table/view/index creation, payment aggregation, category joins, RFM reconciliation, cohort retention, and all chart artifacts. A full-dataset run is required before making claims about actual business performance.
+
+
+## Source-reviewed architecture overview
+
+```mermaid
+%% Source-reviewed overview; 2026-10-03; commit 3609c9a80a117dbf0ed00d27b075a9aad09e9550
+%% Solid edges: core flow. Dashed edges: optional or separately invoked services.
+%%{init: {"theme":"base","securityLevel":"loose","fontFamily":"Arial, sans-serif","themeVariables":{"background":"#0b1220","primaryColor":"#17283d","primaryTextColor":"#edf4ff","primaryBorderColor":"#71c4ec","lineColor":"#9fadc1","secondaryColor":"#213548","tertiaryColor":"#17283d","edgeLabelBackground":"#0b1220","clusterBkg":"#101d2e","clusterBorder":"#456783","fontSize":"17px"},"flowchart":{"htmlLabels":true,"curve":"linear","nodeSpacing":35,"rankSpacing":50}}}%%
+flowchart TD
+  I["Analyst CLI + seven CSVs"]
+  L["Required-input loader"]
+  R["Raw SQLite tables"]
+  C["Cleaned analytical views"]
+  Q["Business + revenue queries"]
+  M["RFM + cohort calculations"]
+  V["Separate SQL validation reference"]
+  O["Six charts + JSON summary"]
+  I --> L
+  L --> R
+  R --> C
+  C --> Q
+  C --> M
+  R -.->|separate checks, not pipeline gate| V
+  Q --> O
+  M --> O
+  click I "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/analysis.py" "Open source"
+  click L "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/load_database.py" "Open source"
+  click R "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/load_database.py" "Open source"
+  click C "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/load_database.py" "Open source"
+  click Q "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/analysis.py" "Open source"
+  click M "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/analysis.py" "Open source"
+  click V "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/sql/validation.sql" "Open source"
+  click O "https://github.com/icecold009/ecommerce-customer-analytics/blob/3609c9a80a117dbf0ed00d27b075a9aad09e9550/analysis.py" "Open source"
+  classDef core fill:#17283d,stroke:#71c4ec,stroke-width:1.6px,color:#edf4ff;
+  class I,L,R,C,Q,M,V,O core;
+```
+
+See the [architecture case study](docs/architecture/README.md), [coverage](docs/architecture/coverage.md), and [publication evidence and rendered previews](docs/architecture/publication.md).
